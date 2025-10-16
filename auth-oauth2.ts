@@ -50,8 +50,21 @@ class OAuth2GoogleAuth {
         throw new Error('Invalid state parameter');
       }
 
+      // Get code verifier from session storage
+      const codeVerifier = sessionStorage.getItem('code_verifier');
+      if (!codeVerifier) {
+        throw new Error('Code verifier not found');
+      }
+
+      console.log('🔍 Exchanging code for tokens:', {
+        code: code.substring(0, 10) + '...',
+        hasVerifier: !!codeVerifier,
+        redirectUri: this.redirectUri,
+        clientId: this.clientId
+      });
+
       // Exchange authorization code for tokens
-      const response = await fetch('/api/auth/token', {
+      const response = await fetch('http://localhost:8000/api/auth/token', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -60,12 +73,14 @@ class OAuth2GoogleAuth {
           code,
           redirect_uri: this.redirectUri,
           client_id: this.clientId,
-          code_verifier: sessionStorage.getItem('code_verifier') || undefined
+          code_verifier: codeVerifier
         })
       });
 
       if (!response.ok) {
-        throw new Error('Token exchange failed');
+        const errorText = await response.text();
+        console.error('❌ Token exchange failed:', response.status, errorText);
+        throw new Error(`Token exchange failed: ${response.status} ${errorText}`);
       }
 
       const tokenData = await response.json();
