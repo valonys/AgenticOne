@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OAuth Test - AgenticOne</title>
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .test-section {
+            margin: 20px 0;
+            padding: 20px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        .success { background: #d4edda; border-color: #c3e6cb; }
+        .error { background: #f8d7da; border-color: #f5c6cb; }
+        .info { background: #d1ecf1; border-color: #bee5eb; }
+        button {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover { background: #0056b3; }
+        .guest-btn { background: #28a745; }
+        .guest-btn:hover { background: #1e7e34; }
+        #result {
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: 4px;
+            min-height: 100px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔐 OAuth Test - AgenticOne</h1>
+        <p>This page tests Google OAuth configuration for AgenticOne.</p>
+        
+        <div class="test-section info">
+            <h3>📋 Test Information</h3>
+            <p><strong>Client ID:</strong> <span id="client-id">Loading...</span></p>
+            <p><strong>Domain:</strong> <span id="domain">Loading...</span></p>
+            <p><strong>Status:</strong> <span id="status">Initializing...</span></p>
+        </div>
+
+        <div class="test-section">
+            <h3>🧪 OAuth Tests</h3>
+            <button onclick="testGoogleOAuth()">Test Google OAuth</button>
+            <button onclick="testGuestMode()" class="guest-btn">Test Guest Mode</button>
+            <button onclick="clearResults()">Clear Results</button>
+        </div>
+
+        <div id="result"></div>
+    </div>
+
+    <script>
+        let clientId = '835773828317-v3ce03jcca5o7nq09vs2tuc1tejke8du.apps.googleusercontent.com';
+        let isOAuthReady = false;
+
+        // Initialize OAuth
+        function initializeOAuth() {
+            if (window.google?.accounts?.id) {
+                try {
+                    window.google.accounts.id.initialize({
+                        client_id: clientId,
+                        callback: handleCredentialResponse,
+                        auto_select: false,
+                        cancel_on_tap_outside: true,
+                        ux_mode: 'popup'
+                    });
+                    
+                    isOAuthReady = true;
+                    updateStatus('✅ OAuth Ready', 'success');
+                    console.log('✅ Google OAuth initialized successfully');
+                } catch (error) {
+                    updateStatus('❌ OAuth Failed: ' + error.message, 'error');
+                    console.error('❌ Google OAuth initialization failed:', error);
+                }
+            } else {
+                updateStatus('⏳ Waiting for Google script...', 'info');
+                setTimeout(initializeOAuth, 100);
+            }
+        }
+
+        function handleCredentialResponse(response) {
+            try {
+                console.log('Received OAuth response:', response);
+                
+                if (!response.credential) {
+                    showResult('❌ No credential in response', 'error');
+                    return;
+                }
+                
+                // Decode JWT token
+                const payload = JSON.parse(atob(response.credential.split('.')[1]));
+                console.log('Decoded JWT payload:', payload);
+                
+                showResult(`
+                    <h4>✅ OAuth Success!</h4>
+                    <p><strong>Name:</strong> ${payload.name}</p>
+                    <p><strong>Email:</strong> ${payload.email}</p>
+                    <p><strong>ID:</strong> ${payload.sub}</p>
+                    <p><strong>Picture:</strong> <img src="${payload.picture}" style="width: 50px; height: 50px; border-radius: 50%;"></p>
+                `, 'success');
+                
+            } catch (error) {
+                showResult('❌ OAuth Error: ' + error.message, 'error');
+                console.error('OAuth error:', error);
+            }
+        }
+
+        function testGoogleOAuth() {
+            if (!isOAuthReady) {
+                showResult('❌ OAuth not ready. Please wait for initialization.', 'error');
+                return;
+            }
+            
+            try {
+                window.google.accounts.id.prompt((notification) => {
+                    console.log('OAuth notification:', notification);
+                    if (notification.isNotDisplayed() || notification.isSkippedMoment()) {
+                        showResult('⚠️ OAuth prompt not displayed. This might be due to domain configuration.', 'error');
+                    }
+                });
+            } catch (error) {
+                showResult('❌ OAuth Error: ' + error.message, 'error');
+            }
+        }
+
+        function testGuestMode() {
+            const guestName = 'Test Guest';
+            const guestUser = {
+                id: 'guest-' + Date.now(),
+                email: 'guest@agenticone.com',
+                name: guestName,
+                picture: 'https://via.placeholder.com/150/4F46E5/FFFFFF?text=' + guestName.charAt(0).toUpperCase(),
+                access_token: 'guest-token-' + Date.now()
+            };
+            
+            showResult(`
+                <h4>✅ Guest Mode Success!</h4>
+                <p><strong>Name:</strong> ${guestUser.name}</p>
+                <p><strong>Email:</strong> ${guestUser.email}</p>
+                <p><strong>ID:</strong> ${guestUser.id}</p>
+                <p><strong>Picture:</strong> <img src="${guestUser.picture}" style="width: 50px; height: 50px; border-radius: 50%;"></p>
+            `, 'success');
+        }
+
+        function clearResults() {
+            document.getElementById('result').innerHTML = '';
+        }
+
+        function showResult(message, type) {
+            const result = document.getElementById('result');
+            result.innerHTML = message;
+            result.className = type;
+        }
+
+        function updateStatus(message, type) {
+            document.getElementById('status').textContent = message;
+            document.getElementById('status').className = type;
+        }
+
+        // Initialize on page load
+        document.addEventListener('DOMContentLoaded', function() {
+            document.getElementById('client-id').textContent = clientId;
+            document.getElementById('domain').textContent = window.location.hostname;
+            initializeOAuth();
+        });
+    </script>
+</body>
+</html>

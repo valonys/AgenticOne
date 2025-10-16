@@ -1,0 +1,5 @@
+{
+  "name": "AgenticOne",
+  "description": "A React-based UI for a multi-agent AI system designed for industrial engineering workflows. It allows users to select specialized AI agents, configure data sources, and engage in technical conversations with auditable citations.",
+  "requestFramePermissions": []
+}
