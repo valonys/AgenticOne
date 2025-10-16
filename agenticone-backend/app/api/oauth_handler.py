@@ -13,8 +13,15 @@ import base64
 router = APIRouter(prefix="/api/auth", tags=["oauth"])
 
 # OAuth 2.0 Configuration
-GOOGLE_CLIENT_ID = "835773828317-v3ce03jcca5o7nq09vs2tuc1tejke8du.apps.googleusercontent.com"
-GOOGLE_CLIENT_SECRET = "your-client-secret-here"  # Replace with actual secret
+import os
+GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID", "835773828317-v3ce03jcca5o7nq09vs2tuc1tejke8du.apps.googleusercontent.com")
+GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET", "your-client-secret-here")
+
+# Debug environment variables
+print(f"🔍 Environment check:")
+print(f"   - GOOGLE_CLIENT_SECRET from env: {os.getenv('GOOGLE_CLIENT_SECRET', 'NOT_SET')}")
+print(f"   - GOOGLE_CLIENT_SECRET loaded: {GOOGLE_CLIENT_SECRET}")
+print(f"   - Is default value: {GOOGLE_CLIENT_SECRET == 'your-client-secret-here'}")
 GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
 GOOGLE_USERINFO_URL = "https://www.googleapis.com/oauth2/v2/userinfo"
 
@@ -28,29 +35,69 @@ async def exchange_code_for_tokens(request: Request):
         client_id = body.get("client_id")
         code_verifier = body.get("code_verifier")
         
-        if not all([code, redirect_uri, client_id]):
-            raise HTTPException(status_code=400, detail="Missing required parameters")
+        # Enhanced logging
+        print(f"🔍 OAuth token exchange request received:")
+        print(f"   - Has code: {bool(code)}")
+        print(f"   - Has verifier: {bool(code_verifier)}")
+        print(f"   - Redirect URI: {redirect_uri}")
+        print(f"   - Client ID: {client_id}")
+        print(f"   - Code (first 10 chars): {code[:10] if code else 'None'}...")
+        print(f"   - Verifier (first 10 chars): {code_verifier[:10] if code_verifier else 'None'}...")
         
-        # Exchange code for tokens
+        # Validate required parameters
+        if not all([code, redirect_uri, client_id, code_verifier]):
+            missing = []
+            if not code: missing.append("code")
+            if not redirect_uri: missing.append("redirect_uri")
+            if not client_id: missing.append("client_id")
+            if not code_verifier: missing.append("code_verifier")
+            print(f"❌ Missing required parameters: {missing}")
+            raise HTTPException(status_code=400, detail=f"Missing required parameters: {missing}")
+        
+        # Exchange code for tokens with proper content type
+        # For PKCE flow, we include client_secret if available (for server-side apps)
+        # but for public clients (SPAs), Google may still require it
         token_data = {
             "client_id": client_id,
-            # For PKCE, client_secret is not required for public clients (SPA)
             "code": code,
             "grant_type": "authorization_code",
             "redirect_uri": redirect_uri,
             "code_verifier": code_verifier
         }
         
+        # Add client_secret if we have it (for server-side OAuth apps)
+        if GOOGLE_CLIENT_SECRET and GOOGLE_CLIENT_SECRET != "your-client-secret-here":
+            token_data["client_secret"] = GOOGLE_CLIENT_SECRET
+            print(f"📤 Using client_secret for server-side OAuth")
+        else:
+            print(f"📤 No client_secret (PKCE flow for public client)")
+        
+        print(f"📤 Token data: {token_data}")
+        
+        print(f"📤 Sending token request to Google with data: {token_data}")
+        
         async with httpx.AsyncClient() as client:
-            response = await client.post(GOOGLE_TOKEN_URL, data=token_data)
+            # Use proper content type for Google OAuth
+            response = await client.post(
+                GOOGLE_TOKEN_URL, 
+                data=token_data,
+                headers={"Content-Type": "application/x-www-form-urlencoded"}
+            )
+            
+            print(f"📥 Google response status: {response.status_code}")
+            print(f"📥 Google response body: {response.text}")
             
             if response.status_code != 200:
-                raise HTTPException(status_code=400, detail="Token exchange failed")
+                error_detail = f"Google token exchange failed: {response.text}"
+                print(f"❌ {error_detail}")
+                raise HTTPException(status_code=400, detail=error_detail)
             
             token_response = response.json()
+            print(f"✅ Token exchange successful, access_token: {token_response.get('access_token', 'None')[:20]}...")
             
             # Get user info
             user_info = await get_user_info(token_response["access_token"])
+            print(f"✅ User info retrieved: {user_info.get('email', 'No email')}")
             
             return {
                 "access_token": token_response["access_token"],
@@ -59,8 +106,13 @@ async def exchange_code_for_tokens(request: Request):
                 "user_info": user_info
             }
             
+    except HTTPException:
+        # Re-raise HTTP exceptions as-is
+        raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        print(f"❌ Unexpected error in token exchange: {str(e)}")
+        print(f"❌ Error type: {type(e).__name__}")
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
 async def get_user_info(access_token: str) -> Dict[str, Any]:
     """Get user information from Google"""
