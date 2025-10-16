@@ -120,5 +120,5 @@ This project is licensed under the MIT License.
 ---
 
 <div align="center">
-  <p>Built with ❤️ by <a href="https://github.com/valonys">ValonyLabs</a></p>
+  <p>Built with ❤️ by <a href="https://valonylabs.com>ValonyLabs</a></p>
 </div>
