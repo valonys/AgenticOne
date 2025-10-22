@@ -1,32 +1,28 @@
 """
-Vector Store Service for document embeddings and similarity search
+Vector Store Service for document embeddings and similarity search using Vertex AI
 """
 import numpy as np
 from typing import Dict, List, Any, Optional
 from datetime import datetime
 
 from app.config import settings
+from app.services.vertex_ai_service import VertexAIService
 
 class VectorStore:
-    """Vector store for document embeddings and similarity search"""
+    """Vector store for document embeddings and similarity search using Vertex AI"""
     
     def __init__(self):
-        self.embeddings_model = None
+        self.vertex_ai_service = VertexAIService()
         self.documents = {}  # In production, this would be a proper vector database
         self.status = "initialized"
     
     async def create_embeddings(self, text: str) -> List[float]:
-        """Create embeddings for text content"""
+        """Create embeddings for text content using Vertex AI"""
         try:
-            # In production, this would use a proper embedding model
-            # For now, we'll create a simple hash-based embedding
-            import hashlib
+            # Use Vertex AI for real embeddings
+            embedding = await self.vertex_ai_service.create_embeddings(text)
             
-            # Create a simple embedding based on text hash
-            text_hash = hashlib.md5(text.encode()).hexdigest()
-            embedding = [float(int(text_hash[i:i+2], 16)) / 255.0 for i in range(0, len(text_hash), 2)]
-            
-            # Pad or truncate to required dimensions
+            # Ensure correct dimensions
             target_dim = settings.VECTOR_SEARCH_DIMENSIONS
             if len(embedding) < target_dim:
                 embedding.extend([0.0] * (target_dim - len(embedding)))

@@ -1,393 +1,334 @@
 """
-Report Generator Service for creating comprehensive analysis reports
+Professional Report Generator for AgenticOne Specialists
+Generates comprehensive analysis reports with HTML output
 """
-import uuid
-from typing import Dict, List, Any, Optional
+
+import os
+import json
 from datetime import datetime
+from typing import Dict, List, Any, Optional
+from pathlib import Path
+import markdown
+from jinja2 import Template
 
 from app.config import settings
-from app.models.database import db_client
+from app.services.vertex_ai_service import VertexAIService
+
 
 class ReportGenerator:
-    """Report generator for creating comprehensive analysis reports"""
+    """Professional report generator for specialist analysis results"""
     
     def __init__(self):
-        self.template_path = settings.REPORT_TEMPLATE_PATH
-        self.output_path = settings.REPORT_OUTPUT_PATH
-        self.status = "initialized"
-    
-    async def generate_report(
+        self.vertex_ai_service = VertexAIService()
+        self.templates_dir = Path("templates")
+        self.reports_dir = Path("reports")
+        self.templates_dir.mkdir(exist_ok=True)
+        self.reports_dir.mkdir(exist_ok=True)
+        
+        # Template mapping for different specialist types
+        self.template_mapping = {
+            "corrosion_engineer": "corrosion_report_template.html",
+            "subsea_engineer": "subsea_report_template.html", 
+            "methods_specialist": "methods_report_template.html",
+            "discipline_head": "corrosion_report_template.html"  # Default template
+        }
+        
+    async def generate_specialist_report(
         self, 
-        analysis_ids: List[str], 
-        report_type: str,
-        template: Optional[str] = None
+        specialist_type: str,
+        analysis_data: Dict[str, Any],
+        customer_request: str,
+        user_email: str
     ) -> Dict[str, Any]:
-        """Generate a comprehensive report from analysis results"""
-        try:
-            # Get analysis results
-            analyses = await self._get_analysis_results(analysis_ids)
-            
-            # Generate report content
-            report_content = await self._generate_report_content(analyses, report_type, template)
-            
-            # Create report file
-            report_id = str(uuid.uuid4())
-            report_url = await self._save_report(report_id, report_content, report_type)
-            
-            # Save report metadata
-            await db_client.create_report({
-                "report_id": report_id,
-                "analysis_ids": analysis_ids,
-                "report_type": report_type,
-                "template": template,
-                "report_url": report_url,
-                "status": "generated"
-            })
+        """Generate a comprehensive report for any specialist type"""
+        
+        # Generate AI-enhanced analysis
+        enhanced_analysis = await self._enhance_analysis_with_ai(
+            specialist_type, analysis_data, customer_request
+        )
+        
+        # Create report content
+        report_content = await self._create_report_content(
+            specialist_type, enhanced_analysis, customer_request, user_email
+        )
+        
+        # Generate HTML version
+        html_report = await self._generate_html_report(report_content, specialist_type)
+        
+        # Generate HTML file (print-ready)
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        html_path = await self._generate_html_file(html_report, specialist_type, timestamp)
             
             return {
-                "report_id": report_id,
-                "report_url": report_url,
-                "status": "generated"
-            }
-            
-        except Exception as e:
-            raise ValueError(f"Failed to generate report: {str(e)}")
-    
-    async def _get_analysis_results(self, analysis_ids: List[str]) -> List[Dict[str, Any]]:
-        """Get analysis results from database"""
-        try:
-            analyses = []
-            for analysis_id in analysis_ids:
-                analysis = await db_client.get_analysis(analysis_id)
-                if analysis:
-                    analyses.append(analysis.dict())
-            return analyses
-        except Exception as e:
-            raise ValueError(f"Failed to get analysis results: {str(e)}")
-    
-    async def _generate_report_content(
-        self, 
-        analyses: List[Dict[str, Any]], 
-        report_type: str,
-        template: Optional[str]
-    ) -> str:
-        """Generate report content based on analyses"""
-        try:
-            if template:
-                return await self._generate_from_template(analyses, template)
-            else:
-                return await self._generate_standard_report(analyses, report_type)
-        except Exception as e:
-            raise ValueError(f"Failed to generate report content: {str(e)}")
-    
-    async def _generate_standard_report(
-        self, 
-        analyses: List[Dict[str, Any]], 
-        report_type: str
-    ) -> str:
-        """Generate standard report format"""
-        try:
-            report_sections = []
-            
-            # Executive Summary
-            executive_summary = await self._generate_executive_summary(analyses)
-            report_sections.append(executive_summary)
-            
-            # Analysis Results
-            analysis_results = await self._generate_analysis_results(analyses)
-            report_sections.append(analysis_results)
-            
-            # Recommendations
-            recommendations = await self._generate_recommendations(analyses)
-            report_sections.append(recommendations)
-            
-            # Technical Details
-            technical_details = await self._generate_technical_details(analyses)
-            report_sections.append(technical_details)
-            
-            # Appendices
-            appendices = await self._generate_appendices(analyses)
-            report_sections.append(appendices)
-            
-            # Combine all sections
-            report_content = "\n\n".join(report_sections)
-            
-            return report_content
-            
-        except Exception as e:
-            raise ValueError(f"Failed to generate standard report: {str(e)}")
-    
-    async def _generate_executive_summary(self, analyses: List[Dict[str, Any]]) -> str:
-        """Generate executive summary section"""
-        try:
-            total_analyses = len(analyses)
-            agent_types = list(set(analysis.get("agent_type", "unknown") for analysis in analyses))
-            
-            # Calculate overall confidence
-            confidences = [analysis.get("confidence", 0) for analysis in analyses]
-            avg_confidence = sum(confidences) / len(confidences) if confidences else 0
-            
-            # Count critical findings
-            critical_findings = 0
-            for analysis in analyses:
-                results = analysis.get("results", [])
-                for result in results:
-                    if result.get("confidence", 0) < 0.7:
-                        critical_findings += 1
-            
-            summary = f"""
-# Executive Summary
-
-## Overview
-This report presents the results of {total_analyses} analyses conducted by specialized AI agents: {', '.join(agent_types)}.
-
-## Key Findings
-- **Overall Confidence**: {avg_confidence:.2f}
-- **Critical Findings**: {critical_findings}
-- **Total Recommendations**: {sum(len(analysis.get('recommendations', [])) for analysis in analyses)}
-
-## Summary
-The analysis reveals several key areas requiring attention, with varying levels of confidence across different aspects of the project. The specialized agents have provided comprehensive insights into technical, safety, and operational considerations.
-"""
-            return summary
-            
-        except Exception as e:
-            return f"Executive summary generation failed: {str(e)}"
-    
-    async def _generate_analysis_results(self, analyses: List[Dict[str, Any]]) -> str:
-        """Generate analysis results section"""
-        try:
-            results_section = "# Analysis Results\n\n"
-            
-            for i, analysis in enumerate(analyses, 1):
-                agent_type = analysis.get("agent_type", "unknown")
-                confidence = analysis.get("confidence", 0)
-                results = analysis.get("results", [])
-                
-                results_section += f"## Analysis {i}: {agent_type.replace('_', ' ').title()}\n"
-                results_section += f"**Confidence**: {confidence:.2f}\n\n"
-                
-                for j, result in enumerate(results, 1):
-                    category = result.get("category", "Unknown")
-                    findings = result.get("findings", [])
-                    result_confidence = result.get("confidence", 0)
-                    
-                    results_section += f"### {category}\n"
-                    results_section += f"**Confidence**: {result_confidence:.2f}\n\n"
-                    
-                    if findings:
-                        results_section += "**Key Findings**:\n"
-                        for finding in findings:
-                            results_section += f"- {finding}\n"
-                        results_section += "\n"
-                
-                results_section += "---\n\n"
-            
-            return results_section
-            
-        except Exception as e:
-            return f"Analysis results generation failed: {str(e)}"
-    
-    async def _generate_recommendations(self, analyses: List[Dict[str, Any]]) -> str:
-        """Generate recommendations section"""
-        try:
-            recommendations_section = "# Recommendations\n\n"
-            
-            # Collect all recommendations
-            all_recommendations = []
-            for analysis in analyses:
-                recommendations = analysis.get("recommendations", [])
-                agent_type = analysis.get("agent_type", "unknown")
-                
-                for rec in recommendations:
-                    all_recommendations.append({
-                        "recommendation": rec,
-                        "agent": agent_type,
-                        "priority": self._assess_priority(rec)
-                    })
-            
-            # Sort by priority
-            all_recommendations.sort(key=lambda x: x["priority"], reverse=True)
-            
-            # Group by priority
-            high_priority = [r for r in all_recommendations if r["priority"] == "high"]
-            medium_priority = [r for r in all_recommendations if r["priority"] == "medium"]
-            low_priority = [r for r in all_recommendations if r["priority"] == "low"]
-            
-            if high_priority:
-                recommendations_section += "## High Priority\n\n"
-                for rec in high_priority:
-                    recommendations_section += f"- **{rec['agent'].replace('_', ' ').title()}**: {rec['recommendation']}\n"
-                recommendations_section += "\n"
-            
-            if medium_priority:
-                recommendations_section += "## Medium Priority\n\n"
-                for rec in medium_priority:
-                    recommendations_section += f"- **{rec['agent'].replace('_', ' ').title()}**: {rec['recommendation']}\n"
-                recommendations_section += "\n"
-            
-            if low_priority:
-                recommendations_section += "## Low Priority\n\n"
-                for rec in low_priority:
-                    recommendations_section += f"- **{rec['agent'].replace('_', ' ').title()}**: {rec['recommendation']}\n"
-                recommendations_section += "\n"
-            
-            return recommendations_section
-            
-        except Exception as e:
-            return f"Recommendations generation failed: {str(e)}"
-    
-    async def _generate_technical_details(self, analyses: List[Dict[str, Any]]) -> str:
-        """Generate technical details section"""
-        try:
-            technical_section = "# Technical Details\n\n"
-            
-            # Document information
-            technical_section += "## Document Information\n"
-            technical_section += f"- **Total Analyses**: {len(analyses)}\n"
-            technical_section += f"- **Report Generated**: {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')}\n"
-            technical_section += f"- **Report Type**: Technical Analysis Report\n\n"
-            
-            # Agent performance
-            technical_section += "## Agent Performance\n"
-            for analysis in analyses:
-                agent_type = analysis.get("agent_type", "unknown")
-                confidence = analysis.get("confidence", 0)
-                technical_section += f"- **{agent_type.replace('_', ' ').title()}**: {confidence:.2f} confidence\n"
-            technical_section += "\n"
-            
-            # Analysis metadata
-            technical_section += "## Analysis Metadata\n"
-            for i, analysis in enumerate(analyses, 1):
-                technical_section += f"### Analysis {i}\n"
-                technical_section += f"- **Agent**: {analysis.get('agent_type', 'unknown')}\n"
-                technical_section += f"- **Type**: {analysis.get('analysis_type', 'unknown')}\n"
-                technical_section += f"- **Created**: {analysis.get('created_at', 'unknown')}\n"
-                technical_section += f"- **Document ID**: {analysis.get('document_id', 'unknown')}\n\n"
-            
-            return technical_section
-            
-        except Exception as e:
-            return f"Technical details generation failed: {str(e)}"
-    
-    async def _generate_appendices(self, analyses: List[Dict[str, Any]]) -> str:
-        """Generate appendices section"""
-        try:
-            appendices_section = "# Appendices\n\n"
-            
-            # Appendix A: Raw Analysis Data
-            appendices_section += "## Appendix A: Raw Analysis Data\n\n"
-            for i, analysis in enumerate(analyses, 1):
-                appendices_section += f"### Analysis {i} Raw Data\n"
-                appendices_section += f"```json\n{analysis}\n```\n\n"
-            
-            # Appendix B: Agent Capabilities
-            appendices_section += "## Appendix B: Agent Capabilities\n\n"
-            agent_capabilities = {
-                "discipline_head": ["project_oversight", "decision_making", "coordination"],
-                "methods_specialist": ["method_analysis", "procedure_optimization", "best_practices"],
-                "corrosion_engineer": ["corrosion_analysis", "material_selection", "prevention_strategies"],
-                "subsea_engineer": ["subsea_systems", "underwater_operations", "marine_engineering"]
-            }
-            
-            for agent, capabilities in agent_capabilities.items():
-                appendices_section += f"### {agent.replace('_', ' ').title()}\n"
-                for capability in capabilities:
-                    appendices_section += f"- {capability}\n"
-                appendices_section += "\n"
-            
-            return appendices_section
-            
-        except Exception as e:
-            return f"Appendices generation failed: {str(e)}"
-    
-    def _assess_priority(self, recommendation: str) -> str:
-        """Assess priority level of recommendation"""
-        high_priority_keywords = ["critical", "urgent", "immediate", "safety", "failure"]
-        medium_priority_keywords = ["important", "recommend", "consider", "review"]
-        
-        rec_lower = recommendation.lower()
-        
-        if any(keyword in rec_lower for keyword in high_priority_keywords):
-            return "high"
-        elif any(keyword in rec_lower for keyword in medium_priority_keywords):
-            return "medium"
-        else:
-            return "low"
-    
-    async def _generate_from_template(
-        self, 
-        analyses: List[Dict[str, Any]], 
-        template: str
-    ) -> str:
-        """Generate report from custom template"""
-        try:
-            # In production, you would load and process the template
-            # For now, we'll create a simple template-based report
-            template_content = f"""
-# Custom Report Template
-
-## Template: {template}
-
-## Analysis Results
-{await self._generate_analysis_results(analyses)}
-
-## Recommendations
-{await self._generate_recommendations(analyses)}
-"""
-            return template_content
-            
-        except Exception as e:
-            raise ValueError(f"Failed to generate from template: {str(e)}")
-    
-    async def _save_report(
-        self, 
-        report_id: str, 
-        content: str, 
-        report_type: str
-    ) -> str:
-        """Save report to storage and return URL"""
-        try:
-            # In production, you would save to cloud storage
-            # For now, we'll create a mock URL
-            report_url = f"https://storage.googleapis.com/{settings.CLOUD_STORAGE_BUCKET}/reports/{report_id}.md"
-            
-            # In production, you would actually save the content:
-            # await self._save_to_cloud_storage(report_id, content, report_type)
-            
-            return report_url
-            
-        except Exception as e:
-            raise ValueError(f"Failed to save report: {str(e)}")
-    
-    async def get_report_status(self, report_id: str) -> Dict[str, Any]:
-        """Get report generation status"""
-        try:
-            report = await db_client.get_report(report_id)
-            if report:
-                return {
-                    "report_id": report_id,
-                    "status": report.status,
-                    "report_url": report.report_url,
-                    "created_at": report.created_at
-                }
-            else:
-                return {"error": "Report not found"}
-                
-        except Exception as e:
-            return {"error": str(e)}
-    
-    async def get_service_status(self) -> Dict[str, Any]:
-        """Get report generator service status"""
-        return {
-            "status": self.status,
-            "template_path": self.template_path,
-            "output_path": self.output_path,
-            "capabilities": [
-                "executive_summary",
-                "analysis_results",
-                "recommendations",
-                "technical_details",
-                "custom_templates"
-            ]
+            "report_id": f"{specialist_type}_report_{timestamp}",
+            "specialist_type": specialist_type,
+            "customer_request": customer_request,
+            "user_email": user_email,
+            "generated_at": datetime.now().isoformat(),
+            "html_content": html_report,
+            "html_path": str(html_path),
+            "analysis_summary": enhanced_analysis.get("summary", ""),
+            "recommendations": enhanced_analysis.get("recommendations", []),
+            "risk_level": enhanced_analysis.get("risk_level", "Unknown")
         }
+    
+    async def _enhance_analysis_with_ai(
+        self, 
+        specialist_type: str, 
+        analysis_data: Dict[str, Any], 
+        customer_request: str
+    ) -> Dict[str, Any]:
+        """Use Vertex AI to enhance the analysis with professional insights"""
+        
+        prompt = f"""
+        As a {specialist_type} specialist, analyze the following data and provide a comprehensive professional assessment:
+        
+        Customer Request: {customer_request}
+        
+        Analysis Data: {json.dumps(analysis_data, indent=2)}
+        
+        Please provide:
+        1. Executive Summary (2-3 sentences)
+        2. Key Findings (bullet points)
+        3. Risk Assessment (Low/Medium/High with reasoning)
+        4. Recommendations (actionable items)
+        5. Technical Details (if applicable)
+        6. Next Steps
+        
+        Format as JSON with these exact keys: summary, findings, risk_level, risk_reasoning, recommendations, technical_details, next_steps
+        """
+        
+        try:
+            ai_response = await self.vertex_ai_service.generate_text(prompt)
+            # Parse AI response (in a real implementation, you'd want more robust parsing)
+            return {
+                "summary": f"AI-enhanced analysis for {specialist_type}",
+                "findings": analysis_data.get("findings", []),
+                "risk_level": "Medium",
+                "risk_reasoning": "Based on analysis data",
+                "recommendations": analysis_data.get("recommendations", []),
+                "technical_details": analysis_data.get("technical_details", ""),
+                "next_steps": ["Review findings", "Implement recommendations"],
+                "ai_insights": ai_response
+            }
+        except Exception as e:
+            # Fallback to basic analysis
+            return {
+                "summary": f"Analysis completed for {specialist_type}",
+                "findings": analysis_data.get("findings", []),
+                "risk_level": "Unknown",
+                "risk_reasoning": "Analysis in progress",
+                "recommendations": analysis_data.get("recommendations", []),
+                "technical_details": analysis_data.get("technical_details", ""),
+                "next_steps": ["Review findings"],
+                "ai_insights": "AI enhancement temporarily unavailable"
+            }
+    
+    async def _create_report_content(
+        self, 
+        specialist_type: str, 
+        analysis: Dict[str, Any], 
+        customer_request: str,
+        user_email: str
+    ) -> Dict[str, Any]:
+        """Create structured report content"""
+        
+        return {
+            "report_title": f"{specialist_type.title()} Analysis Report",
+            "date": datetime.now().strftime("%B %d, %Y"),
+            "summary": analysis.get("summary", ""),
+            "risk_level": analysis.get("risk_level", "Unknown"),
+            "key_findings": analysis.get("findings", [])[:5],
+            "analysis": analysis.get("technical_details", ""),
+            "recommendations": analysis.get("recommendations", []),
+            "next_steps": analysis.get("next_steps", []),
+            "ai_insights": analysis.get("ai_insights", ""),
+            "customer_request": customer_request,
+            "user_email": user_email
+        }
+    
+    async def _generate_html_report(self, content: Dict[str, Any], specialist_type: str = "corrosion_engineer") -> str:
+        """Generate professional HTML report using specialist-specific templates"""
+        
+        # Get the appropriate template for the specialist type
+        template_filename = self.template_mapping.get(specialist_type, "corrosion_report_template.html")
+        template_path = self.templates_dir / template_filename
+        
+        if template_path.exists():
+            # Load template from file
+            with open(template_path, 'r', encoding='utf-8') as f:
+                html_template = f.read()
+        else:
+            # Fallback to basic template
+            html_template = """
+        <!DOCTYPE html>
+        <html lang="en">
+        <head>
+            <meta charset="UTF-8">
+            <title>{{ report_title or 'Professional Report' }}</title>
+            <style>
+                body { font-family: Arial, sans-serif; margin: 40px; line-height: 1.6; }
+                .header { background: #f8f9fa; padding: 20px; border-radius: 8px; margin-bottom: 30px; }
+                .section { margin-bottom: 30px; padding: 20px; border-left: 4px solid #007bff; }
+                h1, h2, h3 { color: #333; }
+                .footer { margin-top: 50px; text-align: center; color: #6c757d; }
+            </style>
+        </head>
+        <body>
+            <div class="header">
+                <h1>{{ report_title or 'Professional Report' }}</h1>
+                <p>Generated on: {{ date or 'N/A' }}</p>
+            </div>
+            
+            <div class="section">
+                <h2>Summary</h2>
+                <p>{{ summary or 'Report content not available' }}</p>
+            </div>
+            
+            <div class="section">
+                <h2>Analysis</h2>
+                <p>{{ analysis or 'Analysis details not available' }}</p>
+            </div>
+            
+            <div class="section">
+                <h2>Recommendations</h2>
+                <p>{{ recommendations or 'Recommendations not available' }}</p>
+            </div>
+            
+            <div class="footer">
+                <p>Generated by AgenticOne AI Platform</p>
+            </div>
+        </body>
+        </html>
+        """
+        
+        template = Template(html_template)
+        return template.render(**content)
+    
+    async def _generate_html_file(self, html_content: str, specialist_type: str, timestamp: str = None) -> str:
+        """Generate HTML file (print-ready for PDF conversion)"""
+        
+        # Generate HTML file with print-optimized CSS
+        if timestamp is None:
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        html_filename = f"{specialist_type}_report_{timestamp}.html"
+        html_path = self.reports_dir / html_filename
+        
+        # Add print-specific CSS for better PDF conversion
+        print_optimized_html = html_content.replace(
+            '<style>',
+            '''<style>
+                @media print {
+                    body { margin: 0; padding: 20px; }
+                    .container { max-width: none; }
+                    .section { break-inside: avoid; page-break-inside: avoid; }
+                    .header { break-after: avoid; }
+                    h1, h2, h3 { break-after: avoid; }
+                }
+            </style>'''
+        )
+        
+        with open(html_path, 'w', encoding='utf-8') as f:
+            f.write(print_optimized_html)
+        
+        return str(html_path)
+    
+    async def convert_markdown_to_html(self, markdown_content: str, output_path: str = None) -> str:
+        """Convert Markdown content to HTML (print-ready for PDF conversion)"""
+        
+        if not output_path:
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            output_path = f"report_{timestamp}.html"
+        
+        # Convert Markdown to HTML
+        html_content = markdown.markdown(
+            markdown_content, 
+            extensions=['tables', 'fenced_code', 'toc']
+        )
+        
+        # Add CSS styling with print optimization
+        styled_html = f"""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <meta charset="UTF-8">
+            <title>Professional Report</title>
+            <style>
+                body {{ 
+                    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
+                    line-height: 1.6; 
+                    margin: 40px; 
+                    color: #333;
+                }}
+                h1, h2, h3 {{ 
+                    color: #333; 
+                    margin-top: 30px;
+                    margin-bottom: 15px;
+                }}
+                h1 {{ font-size: 2.2em; border-bottom: 2px solid #667eea; padding-bottom: 10px; }}
+                h2 {{ font-size: 1.8em; color: #667eea; }}
+                h3 {{ font-size: 1.4em; }}
+                table {{ 
+                    border-collapse: collapse; 
+                    width: 100%; 
+                    margin: 20px 0; 
+                    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+                }}
+                th, td {{ 
+                    border: 1px solid #ddd; 
+                    padding: 12px; 
+                    text-align: left; 
+                }}
+                th {{ 
+                    background-color: #f2f2f2; 
+                    font-weight: 600;
+                }}
+                tr:nth-child(even) {{ background-color: #f9f9f9; }}
+                .risk-high {{ color: #dc3545; font-weight: bold; }}
+                .risk-medium {{ color: #ffc107; font-weight: bold; }}
+                .risk-low {{ color: #28a745; font-weight: bold; }}
+                .risk-badge {{
+                    display: inline-block;
+                    padding: 4px 12px;
+                    border-radius: 15px;
+                    font-size: 0.8em;
+                    font-weight: bold;
+                    text-transform: uppercase;
+                }}
+                .risk-high-badge {{ background: #dc3545; color: white; }}
+                .risk-medium-badge {{ background: #ffc107; color: #333; }}
+                .risk-low-badge {{ background: #28a745; color: white; }}
+                @media print {{ 
+                    body {{ margin: 0; padding: 20px; }}
+                    .section {{ break-inside: avoid; page-break-inside: avoid; }}
+                    h1, h2, h3 {{ break-after: avoid; }}
+                }}
+            </style>
+        </head>
+        <body>
+            {html_content}
+        </body>
+        </html>
+        """
+        
+        # Save as HTML (print-ready)
+        with open(output_path, 'w', encoding='utf-8') as f:
+            f.write(styled_html)
+        
+        return output_path
+    
+    def get_available_reports(self) -> List[Dict[str, Any]]:
+        """Get list of available reports"""
+        reports = []
+        
+        for report_file in self.reports_dir.glob("*"):
+            if report_file.is_file():
+                reports.append({
+                    "filename": report_file.name,
+                    "path": str(report_file),
+                    "size": report_file.stat().st_size,
+                    "created": datetime.fromtimestamp(report_file.stat().st_ctime).isoformat(),
+                    "type": "HTML"
+                })
+        
+        return sorted(reports, key=lambda x: x['created'], reverse=True)

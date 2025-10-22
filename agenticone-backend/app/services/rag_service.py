@@ -9,6 +9,7 @@ from datetime import datetime
 from app.config import settings
 from app.services.vector_store import VectorStore
 from app.services.document_processor import DocumentProcessor
+from app.services.vertex_ai_service import VertexAIService
 from app.models.database import db_client
 
 class RAGService:
@@ -17,6 +18,7 @@ class RAGService:
     def __init__(self):
         self.vector_store = VectorStore()
         self.document_processor = DocumentProcessor()
+        self.vertex_ai_service = VertexAIService()
         self.status = "initialized"
     
     async def process_document(
@@ -67,6 +69,45 @@ class RAGService:
             
         except Exception as e:
             raise ValueError(f"Failed to process document: {str(e)}")
+    
+    async def analyze_document_with_ai(
+        self, 
+        document_id: str, 
+        analysis_type: str = "general"
+    ) -> Dict[str, Any]:
+        """Analyze document using Vertex AI"""
+        try:
+            # Get document content
+            document_content = await self.get_document_content(document_id)
+            
+            # Use Vertex AI for analysis
+            analysis_result = await self.vertex_ai_service.analyze_document(
+                document_text=document_content,
+                analysis_type=analysis_type
+            )
+            
+            return analysis_result
+            
+        except Exception as e:
+            raise ValueError(f"Failed to analyze document with AI: {str(e)}")
+    
+    async def search_documents_semantic(
+        self, 
+        query: str, 
+        limit: int = 5
+    ) -> List[Dict[str, Any]]:
+        """Search documents using semantic search with Vertex AI"""
+        try:
+            # Use Vertex AI for semantic search
+            results = await self.vertex_ai_service.search_similar_documents(
+                query=query,
+                limit=limit
+            )
+            
+            return results
+            
+        except Exception as e:
+            raise ValueError(f"Failed to search documents semantically: {str(e)}")
     
     async def get_document_content(self, document_id: str) -> str:
         """Get document content by ID"""

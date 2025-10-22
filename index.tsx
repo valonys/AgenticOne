@@ -260,6 +260,9 @@ const App: React.FC = () => {
     const [tokenCount, setTokenCount] = useState(0);
     const [queryHistory, setQueryHistory] = useState<Array<{id: string, query: string, agent: string, timestamp: Date}>>([]);
     const [showHistory, setShowHistory] = useState(false);
+    const [isGeneratingReport, setIsGeneratingReport] = useState(false);
+    const [reportModalOpen, setReportModalOpen] = useState(false);
+    const [reportRequest, setReportRequest] = useState('');
     const chatContainerRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
@@ -482,6 +485,108 @@ const App: React.FC = () => {
         });
     }, [uploadedFiles]);
 
+    const handleGenerateReport = useCallback(async () => {
+        if (!user) return;
+        
+        const currentChatHistory = chatHistories[selectedAgent] || [];
+        if (!currentChatHistory.length) return;
+        
+        setIsGeneratingReport(true);
+        try {
+            // Extract conversation data for report generation
+            const conversationData = currentChatHistory.map(msg => ({
+                role: msg.role,
+                content: msg.content,
+                timestamp: new Date().toISOString()
+            }));
+            
+            // Create analysis data from the conversation
+            const analysisData = {
+                findings: conversationData
+                    .filter(msg => msg.role === 'assistant')
+                    .map(msg => msg.content)
+                    .slice(0, 5), // Get last 5 assistant responses
+                recommendations: [],
+                technical_details: `Conversation with ${AGENT_ROLES[selectedAgent].name} on ${new Date().toLocaleDateString()}`,
+                uploaded_files: uploadedFiles.filter(f => f.status === 'ready').map(f => ({
+                    filename: f.file.name,
+                    size: f.file.data.length,
+                    type: f.file.mimeType
+                }))
+            };
+
+            // Map agent roles to backend specialist types
+            const specialistTypeMap: Record<AgentRole, string> = {
+                'CORROSION_ENGINEER': 'corrosion_engineer',
+                'SUBSEA_ENGINEER': 'subsea_engineer', 
+                'METHODS_SPECIALIST': 'methods_specialist',
+                'DISCIPLINE_HEAD': 'discipline_head'
+            };
+
+            const specialistType = specialistTypeMap[selectedAgent];
+            const customerRequest = reportRequest || `Generate a comprehensive report based on my conversation with ${AGENT_ROLES[selectedAgent].name}`;
+            const userEmail = user.email || 'user@example.com';
+
+            // Call the backend report generation API
+            const response = await fetch('http://localhost:8000/api/reports/generate', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                },
+                body: new URLSearchParams({
+                    specialist_type: specialistType,
+                    customer_request: customerRequest,
+                    user_email: userEmail,
+                    analysis_data: JSON.stringify(analysisData)
+                })
+            });
+
+            if (!response.ok) {
+                throw new Error(`Report generation failed: ${response.statusText}`);
+            }
+
+            const result = await response.json();
+            
+            if (result.status === 'success') {
+                // Open the generated report in a new tab
+                // The report_id doesn't include .html, but the actual file does
+                const reportUrl = `http://localhost:8000/api/reports/preview/${result.report.report_id}.html`;
+                window.open(reportUrl, '_blank');
+                
+                // Add a success message to the chat
+                const successMessage: Message = {
+                    role: 'assistant',
+                    content: `📄 **Report Generated Successfully!**\n\nYour professional report has been generated and is ready for download. The report includes:\n\n• Executive Summary\n• Detailed Analysis\n• Risk Assessment\n• Recommendations\n• Technical Specifications\n\n[View Report](${reportUrl})`,
+                    agentId: selectedAgent
+                };
+                
+                setChatHistories(prev => ({
+                    ...prev,
+                    [selectedAgent]: [...(prev[selectedAgent] || []), successMessage]
+                }));
+            } else {
+                throw new Error(result.message || 'Report generation failed');
+            }
+            
+        } catch (error) {
+            console.error('Report generation error:', error);
+            const errorMessage: Message = {
+                role: 'assistant',
+                content: `❌ **Report Generation Failed**\n\nSorry, I couldn't generate the report. Error: ${error instanceof Error ? error.message : 'Unknown error'}\n\nPlease try again or contact support if the issue persists.`,
+                agentId: selectedAgent
+            };
+            
+            setChatHistories(prev => ({
+                ...prev,
+                [selectedAgent]: [...(prev[selectedAgent] || []), errorMessage]
+            }));
+        } finally {
+            setIsGeneratingReport(false);
+            setReportModalOpen(false);
+            setReportRequest('');
+        }
+    }, [user, chatHistories, selectedAgent, uploadedFiles, reportRequest]);
+
     if (isAuthLoading) {
          return (
             <div className="flex items-center justify-center h-screen bg-gray-900">
@@ -618,6 +723,21 @@ const App: React.FC = () => {
                                 disabled={isLoading}
                                 aria-label="Chat input"
                             />
+                            
+                            {/* Generate Report Button */}
+                            <button
+                                type="button"
+                                onClick={() => setReportModalOpen(true)}
+                                className="ml-2 p-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-800 focus:ring-green-500 transition-colors"
+                                disabled={isLoading || currentChatHistory.length <= 1}
+                                title="Generate professional report from conversation"
+                                aria-label="Generate report"
+                            >
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                </svg>
+                            </button>
+                            
                             <button
                                 type="submit"
                                 className="ml-2 p-2 bg-cyan-600 text-white rounded-lg hover:bg-cyan-700 disabled:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-800 focus:ring-cyan-500 transition-colors"
@@ -633,6 +753,73 @@ const App: React.FC = () => {
                     </div>
                 </main>
             </div>
+            
+            {/* Report Generation Modal */}
+            {reportModalOpen && (
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+                    <div className="bg-gray-800 rounded-lg p-6 w-full max-w-md mx-4">
+                        <div className="flex items-center justify-between mb-4">
+                            <h3 className="text-lg font-semibold text-white">Generate Professional Report</h3>
+                            <button
+                                onClick={() => setReportModalOpen(false)}
+                                className="text-gray-400 hover:text-white text-xl"
+                                aria-label="Close modal"
+                            >
+                                ✕
+                            </button>
+                        </div>
+                        
+                        <div className="mb-4">
+                            <label htmlFor="reportRequest" className="block text-sm font-medium text-gray-300 mb-2">
+                                Report Description (Optional)
+                            </label>
+                            <textarea
+                                id="reportRequest"
+                                value={reportRequest}
+                                onChange={(e) => setReportRequest(e.target.value)}
+                                placeholder={`Describe what you want in the report (e.g., "Focus on corrosion analysis and recommendations")`}
+                                className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                                rows={3}
+                            />
+                        </div>
+                        
+                        <div className="mb-4 p-3 bg-gray-700 rounded-lg">
+                            <h4 className="text-sm font-medium text-cyan-400 mb-2">Report will include:</h4>
+                            <ul className="text-sm text-gray-300 space-y-1">
+                                <li>• Executive Summary</li>
+                                <li>• Conversation Analysis</li>
+                                <li>• Key Findings & Recommendations</li>
+                                <li>• Risk Assessment</li>
+                                <li>• Technical Specifications</li>
+                                <li>• Professional Formatting</li>
+                            </ul>
+                        </div>
+                        
+                        <div className="flex gap-3">
+                            <button
+                                onClick={() => setReportModalOpen(false)}
+                                className="flex-1 py-2 px-4 border border-gray-600 rounded-lg text-sm font-medium text-gray-300 hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-500 transition-colors"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={handleGenerateReport}
+                                disabled={isGeneratingReport}
+                                className="flex-1 py-2 px-4 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-green-500 transition-colors"
+                            >
+                                {isGeneratingReport ? (
+                                    <div className="flex items-center justify-center gap-2">
+                                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                                        Generating...
+                                    </div>
+                                ) : (
+                                    'Generate Report'
+                                )}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };

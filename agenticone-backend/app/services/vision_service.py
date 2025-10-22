@@ -6,11 +6,13 @@ from typing import Dict, List, Any, Optional
 from datetime import datetime
 
 from app.config import settings
+from app.services.vertex_ai_service import VertexAIService
 
 class VisionService:
     """Vision service for image analysis using Vertex AI Gemini"""
     
     def __init__(self):
+        self.vertex_ai_service = VertexAIService()
         self.model_name = settings.VERTEX_AI_MODEL
         self.location = settings.VERTEX_AI_LOCATION
         self.status = "initialized"
@@ -30,9 +32,11 @@ class VisionService:
             if not prompt:
                 prompt = self._get_analysis_prompt(analysis_type)
             
-            # In production, this would use the actual Vertex AI Gemini API
-            # For now, we'll create a mock response
-            analysis_result = await self._mock_image_analysis(image_content, analysis_type)
+            # Use real Vertex AI for image analysis
+            analysis_result = await self.vertex_ai_service.analyze_image(
+                image_content=image_content,
+                prompt=prompt
+            )
             
             return {
                 "analysis_type": analysis_type,

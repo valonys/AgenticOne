@@ -23,6 +23,8 @@ from app.models.schemas import (
     ReportResponse
 )
 from app.api.oauth_handler import router as oauth_router
+from app.api.vertex_ai_endpoints import router as vertex_ai_router
+from app.api.report_endpoints import router as report_router
 
 # Global services
 rag_service = None
@@ -81,6 +83,12 @@ app.add_middleware(
 
 # Include OAuth router
 app.include_router(oauth_router)
+
+# Include Vertex AI router
+app.include_router(vertex_ai_router)
+
+# Include Report router
+app.include_router(report_router)
 
 @app.get("/")
 async def root():
