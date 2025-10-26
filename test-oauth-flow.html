@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OAuth 2.0 Flow Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #1a1a1a;
+            color: white;
+        }
+        .container {
+            background: #2d2d2d;
+            padding: 20px;
+            border-radius: 8px;
+            margin: 20px 0;
+        }
+        button {
+            background: #4285f4;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 10px 5px;
+        }
+        button:hover {
+            background: #3367d6;
+        }
+        .error {
+            color: #ff6b6b;
+            background: #3d1a1a;
+            padding: 10px;
+            border-radius: 4px;
+            margin: 10px 0;
+        }
+        .success {
+            color: #51cf66;
+            background: #1a3d1a;
+            padding: 10px;
+            border-radius: 4px;
+            margin: 10px 0;
+        }
+        pre {
+            background: #1a1a1a;
+            padding: 10px;
+            border-radius: 4px;
+            overflow-x: auto;
+        }
+    </style>
+</head>
+<body>
+    <h1>OAuth 2.0 Flow Test</h1>
+    
+    <div class="container">
+        <h2>Current URL Parameters</h2>
+        <pre id="urlParams"></pre>
+    </div>
+
+    <div class="container">
+        <h2>OAuth Test</h2>
+        <button onclick="testOAuthFlow()">Test OAuth Flow</button>
+        <button onclick="testBackend()">Test Backend</button>
+        <div id="result"></div>
+    </div>
+
+    <script>
+        // Display current URL parameters
+        function displayUrlParams() {
+            const urlParams = new URLSearchParams(window.location.search);
+            const params = {};
+            for (const [key, value] of urlParams) {
+                params[key] = value;
+            }
+            document.getElementById('urlParams').textContent = JSON.stringify(params, null, 2);
+        }
+
+        // Test OAuth flow
+        async function testOAuthFlow() {
+            const resultDiv = document.getElementById('result');
+            resultDiv.innerHTML = '<div>Testing OAuth flow...</div>';
+
+            try {
+                // Generate PKCE challenge
+                const codeVerifier = generateRandomString(128);
+                const codeChallenge = await generatePKCEChallenge(codeVerifier);
+                const state = generateRandomString(32);
+
+                // Store for later use
+                sessionStorage.setItem('code_verifier', codeVerifier);
+                sessionStorage.setItem('oauth_state', state);
+
+                // Build OAuth URL
+                const authUrl = new URL('https://accounts.google.com/o/oauth2/v2/auth');
+                authUrl.searchParams.set('client_id', '835773828317-v3ce03jcca5o7nq09vs2tuc1tejke8du.apps.googleusercontent.com');
+                authUrl.searchParams.set('redirect_uri', window.location.origin);
+                authUrl.searchParams.set('response_type', 'code');
+                authUrl.searchParams.set('scope', 'openid profile email');
+                authUrl.searchParams.set('state', state);
+                authUrl.searchParams.set('code_challenge', codeChallenge);
+                authUrl.searchParams.set('code_challenge_method', 'S256');
+                authUrl.searchParams.set('access_type', 'offline');
+                authUrl.searchParams.set('prompt', 'consent');
+
+                resultDiv.innerHTML = `
+                    <div class="success">OAuth URL generated successfully!</div>
+                    <pre>${authUrl.toString()}</pre>
+                    <button onclick="window.location.href='${authUrl.toString()}'">Start OAuth Flow</button>
+                `;
+            } catch (error) {
+                resultDiv.innerHTML = `<div class="error">Error: ${error.message}</div>`;
+            }
+        }
+
+        // Test backend connection
+        async function testBackend() {
+            const resultDiv = document.getElementById('result');
+            resultDiv.innerHTML = '<div>Testing backend connection...</div>';
+
+            try {
+                const response = await fetch('http://localhost:8000/', {
+                    method: 'GET',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    }
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    resultDiv.innerHTML = `
+                        <div class="success">Backend is running!</div>
+                        <pre>${JSON.stringify(data, null, 2)}</pre>
+                    `;
+                } else {
+                    resultDiv.innerHTML = `<div class="error">Backend error: ${response.status} ${response.statusText}</div>`;
+                }
+            } catch (error) {
+                resultDiv.innerHTML = `<div class="error">Backend connection failed: ${error.message}</div>`;
+            }
+        }
+
+        // Generate random string
+        function generateRandomString(length) {
+            const charset = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~';
+            let result = '';
+            for (let i = 0; i < length; i++) {
+                result += charset.charAt(Math.floor(Math.random() * charset.length));
+            }
+            return result;
+        }
+
+        // Generate PKCE challenge
+        async function generatePKCEChallenge(codeVerifier) {
+            const encoder = new TextEncoder();
+            const data = encoder.encode(codeVerifier);
+            const digest = await crypto.subtle.digest('SHA-256', data);
+            return btoa(String.fromCharCode(...new Uint8Array(digest)))
+                .replace(/\+/g, '-')
+                .replace(/\//g, '_')
+                .replace(/=/g, '');
+        }
+
+        // Check if we're returning from OAuth
+        function checkOAuthCallback() {
+            const urlParams = new URLSearchParams(window.location.search);
+            const code = urlParams.get('code');
+            const state = urlParams.get('state');
+            const error = urlParams.get('error');
+
+            if (error) {
+                document.getElementById('result').innerHTML = `<div class="error">OAuth Error: ${error}</div>`;
+                return;
+            }
+
+            if (code && state) {
+                // Test token exchange
+                testTokenExchange(code, state);
+            }
+        }
+
+        // Test token exchange
+        async function testTokenExchange(code, state) {
+            const resultDiv = document.getElementById('result');
+            resultDiv.innerHTML = '<div>Testing token exchange...</div>';
+
+            try {
+                const storedState = sessionStorage.getItem('oauth_state');
+                if (state !== storedState) {
+                    throw new Error('Invalid state parameter');
+                }
+
+                const codeVerifier = sessionStorage.getItem('code_verifier');
+                if (!codeVerifier) {
+                    throw new Error('Code verifier not found');
+                }
+
+                const response = await fetch('http://localhost:8000/api/auth/token', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        code: code,
+                        redirect_uri: window.location.origin,
+                        client_id: '835773828317-v3ce03jcca5o7nq09vs2tuc1tejke8du.apps.googleusercontent.com',
+                        code_verifier: codeVerifier
+                    })
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    resultDiv.innerHTML = `
+                        <div class="success">Token exchange successful!</div>
+                        <pre>${JSON.stringify(data, null, 2)}</pre>
+                    `;
+                } else {
+                    const errorData = await response.text();
+                    resultDiv.innerHTML = `
+                        <div class="error">Token exchange failed: ${response.status} ${response.statusText}</div>
+                        <pre>${errorData}</pre>
+                    `;
+                }
+            } catch (error) {
+                resultDiv.innerHTML = `<div class="error">Token exchange error: ${error.message}</div>`;
+            }
+        }
+
+        // Initialize
+        displayUrlParams();
+        checkOAuthCallback();
+    </script>
+</body>
+</html>
