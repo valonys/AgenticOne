@@ -6,6 +6,13 @@ import { auth, type GoogleUser } from './auth-oauth2';
 import type { Message, Agent, AgentRole, RagSources, UploadedFileState } from './types';
 import { AGENT_ROLES, UserAvatar, AssistantAvatar } from './constants';
 
+// Import conversation storage
+declare global {
+    interface Window {
+        conversationStorage: any;
+    }
+}
+
 const ai = new GoogleGenAI({ apiKey: import.meta.env.VITE_GEMINI_API_KEY });
 
 const MAX_FILES = 5;
@@ -269,17 +276,41 @@ const App: React.FC = () => {
         const unsubscribe = auth.onAuthStateChanged((currentUser) => {
             setUser(currentUser);
             if (currentUser && Object.keys(chatHistories).length === 0) {
-                 const initialHistories: Partial<Record<AgentRole, Message[]>> = {};
+                // Load saved conversations from localStorage
+                const savedConversations = window.conversationStorage?.getAllUserConversations(currentUser.email) || {};
+                
+                const initialHistories: Partial<Record<AgentRole, Message[]>> = {};
                 (Object.keys(AGENT_ROLES) as AgentRole[]).forEach(key => {
-                    initialHistories[key] = [
-                        {
-                            role: 'assistant',
-                            content: AGENT_ROLES[key].getWelcomeMessage(currentUser.name || 'there'),
-                            agentId: key,
-                        }
-                    ];
+                    // Use saved conversation if available, otherwise create welcome message
+                    if (savedConversations[key] && savedConversations[key].length > 0) {
+                        initialHistories[key] = savedConversations[key];
+                        console.log(`📂 Loaded ${savedConversations[key].length} messages for ${key}`);
+                    } else {
+                        initialHistories[key] = [
+                            {
+                                role: 'assistant',
+                                content: AGENT_ROLES[key].getWelcomeMessage(currentUser.name || 'there'),
+                                agentId: key,
+                            }
+                        ];
+                    }
                 });
                 setChatHistories(initialHistories);
+                
+                // Load user session data
+                const sessionData = window.conversationStorage?.loadUserSession(currentUser.email);
+                if (sessionData) {
+                    if (sessionData.selected_agent) {
+                        setSelectedAgent(sessionData.selected_agent);
+                    }
+                    if (sessionData.rag_sources) {
+                        setRagSources(sessionData.rag_sources);
+                    }
+                    if (sessionData.uploaded_files) {
+                        setUploadedFiles(sessionData.uploaded_files);
+                    }
+                    console.log(`📂 Loaded user session for ${currentUser.email}`);
+                }
             }
             setIsAuthLoading(false);
         });
@@ -301,15 +332,43 @@ const App: React.FC = () => {
             chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
         }
     }, [chatHistories[selectedAgent]]);
+
+    // Save conversations to localStorage whenever chatHistories change
+    useEffect(() => {
+        if (user && Object.keys(chatHistories).length > 0) {
+            Object.entries(chatHistories).forEach(([agentRole, messages]) => {
+                if (messages && messages.length > 0) {
+                    window.conversationStorage?.saveConversationToLocal(user.email, agentRole, messages);
+                }
+            });
+        }
+    }, [chatHistories, user]);
+
+    // Save user session data whenever relevant state changes
+    useEffect(() => {
+        if (user) {
+            window.conversationStorage?.saveUserSession(
+                user.email,
+                user.name || 'Guest',
+                selectedAgent,
+                ragSources,
+                uploadedFiles
+            );
+        }
+    }, [user, selectedAgent, ragSources, uploadedFiles]);
     
     const handleSignOut = useCallback(async () => {
         try {
+            // Clear user data from localStorage
+            if (user) {
+                window.conversationStorage?.clearUserData(user.email);
+            }
             auth.signOut();
             setChatHistories({}); // Clear chat history on sign out
         } catch (error) {
             console.error("Sign out error:", error);
         }
-    }, []);
+    }, [user]);
 
     const handleSendMessage = useCallback(async (e: React.FormEvent) => {
         e.preventDefault();

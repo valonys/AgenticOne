@@ -1,141 +1,170 @@
-"""
-Persistent Storage Service for Agent Conversations
-Handles conversation persistence across sessions using localStorage and backend storage
-"""
+/**
+ * Persistent Storage Service for Agent Conversations
+ * Handles conversation persistence across sessions using localStorage
+ */
 
-import json
-from typing import Dict, List, Any, Optional
-from datetime import datetime
+class ConversationStorage {
+    constructor() {
+        this.storageKeyPrefix = "agenticone_conversation_";
+        this.userKeyPrefix = "agenticone_user_";
+    }
 
-class ConversationStorage:
-    """Handles persistent storage of agent conversations"""
-    
-    def __init__(self):
-        self.storage_key_prefix = "agenticone_conversation_"
-        self.user_key_prefix = "agenticone_user_"
-    
-    def save_conversation_to_local(
-        self, 
-        user_email: str, 
-        agent_role: str, 
-        messages: List[Dict[str, Any]]
-    ) -> None:
-        """Save conversation to localStorage"""
-        try:
-            storage_key = f"{self.storage_key_prefix}{user_email}_{agent_role}"
-            conversation_data = {
-                "user_email": user_email,
-                "agent_role": agent_role,
-                "messages": messages,
-                "last_updated": datetime.now().isoformat(),
-                "message_count": len(messages)
+    saveConversationToLocal(userEmail, agentRole, messages) {
+        try {
+            const storageKey = `${this.storageKeyPrefix}${userEmail}_${agentRole}`;
+            const conversationData = {
+                user_email: userEmail,
+                agent_role: agentRole,
+                messages: messages,
+                last_updated: new Date().toISOString(),
+                message_count: messages.length
+            };
+
+            if (typeof window !== 'undefined' && window.localStorage) {
+                window.localStorage.setItem(storageKey, JSON.stringify(conversationData));
+                console.log(`💾 Saved conversation for ${agentRole} (${messages.length} messages)`);
             }
-            
-            # Store in localStorage (this will be called from frontend)
-            if typeof window !== 'undefined' and window.localStorage:
-                window.localStorage.setItem(storage_key, JSON.stringify(conversation_data))
-                
-        except Exception as e:
-            print(f"Error saving conversation to local storage: {e}")
-    
-    def load_conversation_from_local(
-        self, 
-        user_email: str, 
-        agent_role: str
-    ) -> Optional[List[Dict[str, Any]]]:
-        """Load conversation from localStorage"""
-        try:
-            storage_key = f"{self.storage_key_prefix}{user_email}_{agent_role}"
-            
-            if typeof window !== 'undefined' and window.localStorage:
-                stored_data = window.localStorage.getItem(storage_key)
-                if stored_data:
-                    conversation_data = JSON.parse(stored_data)
-                    return conversation_data.get("messages", [])
-                    
-        except Exception as e:
-            print(f"Error loading conversation from local storage: {e}")
-        
-        return None
-    
-    def save_user_session(
-        self, 
-        user_email: str, 
-        user_name: str, 
-        selected_agent: str,
-        rag_sources: Dict[str, Any],
-        uploaded_files: List[Dict[str, Any]]
-    ) -> None:
-        """Save user session data"""
-        try:
-            session_data = {
-                "user_email": user_email,
-                "user_name": user_name,
-                "selected_agent": selected_agent,
-                "rag_sources": rag_sources,
-                "uploaded_files": uploaded_files,
-                "last_session": datetime.now().isoformat()
+        } catch (error) {
+            console.error("Error saving conversation to local storage:", error);
+        }
+    }
+
+    loadConversationFromLocal(userEmail, agentRole) {
+        try {
+            const storageKey = `${this.storageKeyPrefix}${userEmail}_${agentRole}`;
+
+            if (typeof window !== 'undefined' && window.localStorage) {
+                const storedData = window.localStorage.getItem(storageKey);
+                if (storedData) {
+                    const conversationData = JSON.parse(storedData);
+                    console.log(`📂 Loaded conversation for ${agentRole} (${conversationData.message_count} messages)`);
+                    return conversationData.messages || [];
+                }
             }
-            
-            if typeof window !== 'undefined' and window.localStorage:
+        } catch (error) {
+            console.error("Error loading conversation from local storage:", error);
+        }
+
+        return null;
+    }
+
+    saveUserSession(userEmail, userName, selectedAgent, ragSources, uploadedFiles) {
+        try {
+            const sessionData = {
+                user_email: userEmail,
+                user_name: userName,
+                selected_agent: selectedAgent,
+                rag_sources: ragSources,
+                uploaded_files: uploadedFiles,
+                last_session: new Date().toISOString()
+            };
+
+            if (typeof window !== 'undefined' && window.localStorage) {
                 window.localStorage.setItem(
-                    f"{self.user_key_prefix}{user_email}", 
-                    JSON.stringify(session_data)
-                )
-                
-        except Exception as e:
-            print(f"Error saving user session: {e}")
-    
-    def load_user_session(self, user_email: str) -> Optional[Dict[str, Any]]:
-        """Load user session data"""
-        try:
-            if typeof window !== 'undefined' and window.localStorage:
-                stored_data = window.localStorage.getItem(f"{self.user_key_prefix}{user_email}")
-                if stored_data:
-                    return JSON.parse(stored_data)
-                    
-        except Exception as e:
-            print(f"Error loading user session: {e}")
-        
-        return None
-    
-    def clear_user_data(self, user_email: str) -> None:
-        """Clear all user data from localStorage"""
-        try:
-            if typeof window !== 'undefined' and window.localStorage:
-                # Clear all conversation keys for this user
-                keys_to_remove = []
-                for i in range(window.localStorage.length):
-                    key = window.localStorage.key(i)
-                    if key and (key.startswith(f"{self.storage_key_prefix}{user_email}_") or 
-                               key === f"{self.user_key_prefix}{user_email}"):
-                        keys_to_remove.append(key)
-                
-                for key in keys_to_remove:
-                    window.localStorage.removeItem(key)
-                    
-        except Exception as e:
-            print(f"Error clearing user data: {e}")
-    
-    def get_all_user_conversations(self, user_email: str) -> Dict[str, List[Dict[str, Any]]]:
-        """Get all conversations for a user"""
-        conversations = {}
-        
-        try:
-            if typeof window !== 'undefined' and window.localStorage:
-                for i in range(window.localStorage.length):
-                    key = window.localStorage.key(i)
-                    if key and key.startswith(f"{self.storage_key_prefix}{user_email}_"):
-                        agent_role = key.split('_')[-1]  # Extract agent role
-                        stored_data = window.localStorage.getItem(key)
-                        if stored_data:
-                            conversation_data = JSON.parse(stored_data)
-                            conversations[agent_role] = conversation_data.get("messages", [])
-                            
-        except Exception as e:
-            print(f"Error getting all user conversations: {e}")
-        
-        return conversations
+                    `${this.userKeyPrefix}${userEmail}`,
+                    JSON.stringify(sessionData)
+                );
+                console.log(`💾 Saved user session for ${userEmail}`);
+            }
+        } catch (error) {
+            console.error("Error saving user session:", error);
+        }
+    }
 
-# Global instance
-conversation_storage = ConversationStorage()
+    loadUserSession(userEmail) {
+        try {
+            if (typeof window !== 'undefined' && window.localStorage) {
+                const storedData = window.localStorage.getItem(`${this.userKeyPrefix}${userEmail}`);
+                if (storedData) {
+                    const sessionData = JSON.parse(storedData);
+                    console.log(`📂 Loaded user session for ${userEmail}`);
+                    return sessionData;
+                }
+            }
+        } catch (error) {
+            console.error("Error loading user session:", error);
+        }
+
+        return null;
+    }
+
+    clearUserData(userEmail) {
+        try {
+            if (typeof window !== 'undefined' && window.localStorage) {
+                const keysToRemove = [];
+                for (let i = 0; i < window.localStorage.length; i++) {
+                    const key = window.localStorage.key(i);
+                    if (key && (key.startsWith(`${this.storageKeyPrefix}${userEmail}_`) ||
+                               key === `${this.userKeyPrefix}${userEmail}`)) {
+                        keysToRemove.push(key);
+                    }
+                }
+
+                keysToRemove.forEach(key => {
+                    window.localStorage.removeItem(key);
+                });
+
+                console.log(`🗑️ Cleared user data for ${userEmail}`);
+            }
+        } catch (error) {
+            console.error("Error clearing user data:", error);
+        }
+    }
+
+    getAllUserConversations(userEmail) {
+        const conversations = {};
+
+        try {
+            if (typeof window !== 'undefined' && window.localStorage) {
+                for (let i = 0; i < window.localStorage.length; i++) {
+                    const key = window.localStorage.key(i);
+                    if (key && key.startsWith(`${this.storageKeyPrefix}${userEmail}_`)) {
+                        const agentRole = key.split('_').pop(); // Extract agent role
+                        const storedData = window.localStorage.getItem(key);
+                        if (storedData) {
+                            const conversationData = JSON.parse(storedData);
+                            conversations[agentRole] = conversationData.messages || [];
+                        }
+                    }
+                }
+            }
+        } catch (error) {
+            console.error("Error getting all user conversations:", error);
+        }
+
+        return conversations;
+    }
+
+    getConversationStats(userEmail) {
+        const conversations = this.getAllUserConversations(userEmail);
+        const stats = {
+            total_conversations: Object.keys(conversations).length,
+            total_messages: 0,
+            agents_used: Object.keys(conversations),
+            last_activity: null
+        };
+
+        Object.values(conversations).forEach(messages => {
+            stats.total_messages += messages.length;
+            if (messages.length > 0) {
+                const lastMessage = messages[messages.length - 1];
+                const messageTime = new Date(lastMessage.timestamp);
+                if (!stats.last_activity || messageTime > new Date(stats.last_activity)) {
+                    stats.last_activity = lastMessage.timestamp;
+                }
+            }
+        });
+
+        return stats;
+    }
+}
+
+// Global instance
+const conversationStorage = new ConversationStorage();
+
+// Export for use in React components
+if (typeof module !== 'undefined' && module.exports) {
+    module.exports = { ConversationStorage, conversationStorage };
+} else if (typeof window !== 'undefined') {
+    window.conversationStorage = conversationStorage;
+}

@@ -11,6 +11,7 @@ from pathlib import Path
 
 from app.services.multi_format_report_generator import MultiFormatReportGenerator
 from app.services.vertex_ai_service import VertexAIService
+from app.services.agent_evaluation_service import AgentEvaluationService
 
 
 class EnhancedChatIntegrationService:
@@ -19,6 +20,7 @@ class EnhancedChatIntegrationService:
     def __init__(self):
         self.report_generator = MultiFormatReportGenerator()
         self.vertex_ai_service = VertexAIService()
+        self.evaluation_service = AgentEvaluationService()
         self.conversations_dir = Path("conversations")
         self.conversations_dir.mkdir(exist_ok=True)
         
@@ -92,11 +94,28 @@ class EnhancedChatIntegrationService:
             user_name=user_name
         )
         
+        # Trigger evaluation for conversations with sufficient messages
+        evaluation_triggered = False
+        if len(conversation_history) >= 4:  # At least 2 exchanges
+            try:
+                await self._trigger_conversation_evaluation(
+                    conversation_id=conversation_id,
+                    specialist_type=specialist_type,
+                    user_email=user_email,
+                    conversation_data={"messages": conversation_history}
+                )
+                evaluation_triggered = True
+                print(f"📊 Evaluation triggered for conversation {conversation_id}")
+            except Exception as e:
+                print(f"⚠️ Evaluation trigger failed: {e}")
+        
         result = {
             "conversation_id": conversation_id,
             "agent_response": agent_response,
             "report_generated": False,
-            "report_data": None
+            "report_data": None,
+            "evaluation_triggered": evaluation_triggered,
+            "timestamp": datetime.now().isoformat()
         }
         
         # Generate report if requested
@@ -460,3 +479,27 @@ class EnhancedChatIntegrationService:
         
         with open(conversation_file, 'r', encoding='utf-8') as f:
             return json.load(f)
+    
+    async def _trigger_conversation_evaluation(
+        self,
+        conversation_id: str,
+        specialist_type: str,
+        user_email: str,
+        conversation_data: Dict[str, Any]
+    ) -> None:
+        """Trigger evaluation for a conversation"""
+        try:
+            evaluation = await self.evaluation_service.evaluate_conversation(
+                agent_role=specialist_type,
+                user_email=user_email,
+                conversation_id=conversation_id,
+                conversation_data=conversation_data
+            )
+            
+            print(f"📊 Evaluation completed for {specialist_type}: {evaluation.overall_score:.2f}")
+            print(f"   Strengths: {', '.join(evaluation.strengths)}")
+            print(f"   Improvements: {', '.join(evaluation.improvements)}")
+            
+        except Exception as e:
+            print(f"❌ Evaluation failed for conversation {conversation_id}: {e}")
+            raise
