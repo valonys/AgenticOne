@@ -172,6 +172,40 @@
     font-size: 0.875rem;
     margin: 0.5rem;
   }
+  
+  /* History sidebar mobile */
+  .history-sidebar {
+    position: fixed !important;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    width: 100% !important;
+    max-width: 100% !important;
+    min-width: 100% !important;
+    z-index: 1000;
+    background-color: #1f2937;
+  }
+  
+  /* Hide other sidebars when history is open on mobile */
+  .history-sidebar ~ aside {
+    display: none;
+  }
+  
+  /* History sidebar content mobile */
+  .history-sidebar .conversation-item {
+    padding: 0.75rem;
+    margin-bottom: 0.5rem;
+  }
+  
+  .history-sidebar .conversation-preview {
+    font-size: 0.875rem;
+    line-height: 1.4;
+  }
+  
+  .history-sidebar .conversation-meta {
+    font-size: 0.75rem;
+  }
 }
 
 /* Tablet styles */
@@ -192,6 +226,13 @@
   .agent-button {
     flex: 1;
     min-width: 150px;
+  }
+  
+  /* History sidebar tablet */
+  .history-sidebar {
+    width: 35% !important;
+    min-width: 280px !important;
+    max-width: 350px !important;
   }
 }
 
@@ -232,6 +273,17 @@
   
   .file-input {
     min-height: 44px;
+  }
+  
+  /* History sidebar touch targets */
+  .history-sidebar .conversation-item {
+    min-height: 60px;
+    padding: 0.875rem;
+  }
+  
+  .history-sidebar button {
+    min-height: 44px;
+    min-width: 44px;
   }
 }
 

@@ -159,7 +159,7 @@ const LoginScreen: React.FC = memo(() => {
     );
 });
 
-const Header: React.FC<{ user: GoogleUser; onSignOut: () => void; tokenCount: number; totalTokenLimit: number; onToggleHistory: () => void; showHistory: boolean }> = memo(({ user, onSignOut, tokenCount, totalTokenLimit, onToggleHistory, showHistory }) => (
+const Header: React.FC<{ user: GoogleUser; onSignOut: () => void; tokenCount: number; totalTokenLimit: number; onToggleHistory: () => void; showHistory: boolean; conversationCount?: number }> = memo(({ user, onSignOut, tokenCount, totalTokenLimit, onToggleHistory, showHistory, conversationCount = 0 }) => (
      <header className="bg-gray-800 border-b border-gray-700 p-4 flex justify-between items-center shadow-md flex-shrink-0">
         <div className="flex items-center gap-4">
             <AppLogo className="h-10 w-auto" />
@@ -175,10 +175,19 @@ const Header: React.FC<{ user: GoogleUser; onSignOut: () => void; tokenCount: nu
             </div>
             <button
                 onClick={onToggleHistory}
-                className="py-2 px-3 border border-gray-600 rounded-lg shadow-sm text-sm font-medium text-white bg-gray-700 hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-800 focus:ring-cyan-500 transition-all"
-                title="Query History"
+                className={`py-2 px-3 border rounded-lg shadow-sm text-sm font-medium transition-all focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-800 focus:ring-cyan-500 relative ${
+                    showHistory 
+                        ? 'border-cyan-500 bg-cyan-900 text-cyan-100' 
+                        : 'border-gray-600 bg-gray-700 text-white hover:bg-gray-600'
+                }`}
+                title="Chat History"
             >
                 📋 History
+                {conversationCount > 0 && (
+                    <span className="absolute -top-1 -right-1 bg-cyan-500 text-white text-xs font-bold rounded-full h-5 w-5 flex items-center justify-center">
+                        {conversationCount > 99 ? '99+' : conversationCount}
+                    </span>
+                )}
             </button>
             <button
                 onClick={onSignOut}
@@ -267,6 +276,13 @@ const App: React.FC = () => {
     const [tokenCount, setTokenCount] = useState(0);
     const [queryHistory, setQueryHistory] = useState<Array<{id: string, query: string, agent: string, timestamp: Date}>>([]);
     const [showHistory, setShowHistory] = useState(false);
+    const [allConversations, setAllConversations] = useState<Array<{
+        agentRole: AgentRole;
+        agentName: string;
+        messages: Message[];
+        lastUpdated: string;
+        messageCount: number;
+    }>>([]);
     const [isGeneratingReport, setIsGeneratingReport] = useState(false);
     const [reportModalOpen, setReportModalOpen] = useState(false);
     const [reportRequest, setReportRequest] = useState('');
@@ -343,6 +359,69 @@ const App: React.FC = () => {
             });
         }
     }, [chatHistories, user]);
+
+    // Load all conversations for history sidebar
+    const loadAllConversations = useCallback(() => {
+        if (!user || !window.conversationStorage) return;
+        
+        const conversations = window.conversationStorage.getAllUserConversations(user.email);
+        const conversationList: Array<{
+            agentRole: AgentRole;
+            agentName: string;
+            messages: Message[];
+            lastUpdated: string;
+            messageCount: number;
+        }> = [];
+        
+        Object.entries(conversations).forEach(([agentRole, messages]) => {
+            if (messages && Array.isArray(messages) && messages.length > 0) {
+                const agent = AGENT_ROLES[agentRole as AgentRole];
+                if (agent) {
+                    // Get last message timestamp
+                    const lastMessage = messages[messages.length - 1];
+                    const timestamp = lastMessage.timestamp || lastMessage.createdAt || new Date().toISOString();
+                    
+                    conversationList.push({
+                        agentRole: agentRole as AgentRole,
+                        agentName: agent.name,
+                        messages: messages as Message[],
+                        lastUpdated: timestamp,
+                        messageCount: messages.length
+                    });
+                }
+            }
+        });
+        
+        // Sort by last updated (most recent first)
+        conversationList.sort((a, b) => {
+            const dateA = new Date(a.lastUpdated).getTime();
+            const dateB = new Date(b.lastUpdated).getTime();
+            return dateB - dateA;
+        });
+        
+        setAllConversations(conversationList);
+    }, [user]);
+
+    // Load conversations when user changes or history is opened
+    useEffect(() => {
+        if (user) {
+            loadAllConversations();
+        }
+    }, [user, loadAllConversations]);
+    
+    // Refresh conversations when history sidebar is opened
+    useEffect(() => {
+        if (user && showHistory) {
+            loadAllConversations();
+        }
+    }, [showHistory, user, loadAllConversations]);
+
+    // Refresh conversations when chat histories change
+    useEffect(() => {
+        if (user && showHistory) {
+            loadAllConversations();
+        }
+    }, [chatHistories, user, showHistory, loadAllConversations]);
 
     // Save user session data whenever relevant state changes
     useEffect(() => {
@@ -667,7 +746,15 @@ const App: React.FC = () => {
     
     return (
         <div className="flex flex-col h-screen font-sans bg-gray-900 text-gray-100">
-            <Header user={user} onSignOut={handleSignOut} tokenCount={tokenCount} totalTokenLimit={TOTAL_TOKEN_LIMIT} onToggleHistory={() => setShowHistory(!showHistory)} showHistory={showHistory} />
+            <Header 
+                user={user} 
+                onSignOut={handleSignOut} 
+                tokenCount={tokenCount} 
+                totalTokenLimit={TOTAL_TOKEN_LIMIT} 
+                onToggleHistory={() => setShowHistory(!showHistory)} 
+                showHistory={showHistory}
+                conversationCount={allConversations.length}
+            />
             
             {/* Agent Tabs */}
             <div className="bg-gray-800 border-b border-gray-700">
@@ -677,36 +764,147 @@ const App: React.FC = () => {
             </div>
 
             <div className="flex flex-1 overflow-hidden">
-                {/* History Sidebar */}
+                {/* Chat History Sidebar */}
                 {showHistory && (
-                    <aside className="w-1/4 min-w-[300px] bg-gray-800 p-6 overflow-y-auto border-r border-gray-700 flex flex-col">
-                        <div className="flex items-center justify-between mb-4">
-                            <h2 className="text-lg font-bold text-white">Query History</h2>
+                    <aside className="w-1/4 min-w-[300px] max-w-[400px] bg-gray-800 border-r border-gray-700 flex flex-col h-full overflow-hidden history-sidebar">
+                        <div className="flex items-center justify-between p-4 border-b border-gray-700 flex-shrink-0">
+                            <div>
+                                <h2 className="text-lg font-bold text-white">Chat History</h2>
+                                <p className="text-xs text-gray-400 mt-1">
+                                    {allConversations.length} conversation{allConversations.length !== 1 ? 's' : ''}
+                                </p>
+                            </div>
                             <button
                                 onClick={() => setShowHistory(false)}
-                                className="text-gray-400 hover:text-white text-xl"
+                                className="text-gray-400 hover:text-white text-xl p-1 rounded hover:bg-gray-700 transition-colors"
                                 title="Close History"
+                                aria-label="Close history"
                             >
                                 ✕
                             </button>
                         </div>
-                        <div className="space-y-2">
-                            {queryHistory.length === 0 ? (
-                                <p className="text-gray-400 text-sm">No queries yet</p>
+                        
+                        <div className="flex-1 overflow-y-auto p-4 space-y-3">
+                            {allConversations.length === 0 ? (
+                                <div className="text-center py-8">
+                                    <div className="text-4xl mb-2">💬</div>
+                                    <p className="text-gray-400 text-sm">No conversations yet</p>
+                                    <p className="text-gray-500 text-xs mt-1">Start chatting to see history</p>
+                                </div>
                             ) : (
-                                queryHistory.map((entry) => (
-                                    <div key={entry.id} className="p-3 bg-gray-700 rounded-lg hover:bg-gray-600 cursor-pointer transition-colors">
-                                        <div className="flex items-center justify-between mb-1">
-                                            <span className="text-xs text-cyan-400">{entry.agent}</span>
-                                            <span className="text-xs text-gray-500">
-                                                {entry.timestamp.toLocaleTimeString()}
-                                            </span>
+                                allConversations.map((conv, index) => {
+                                    const lastMessage = conv.messages[conv.messages.length - 1];
+                                    // Find last user message (reverse search)
+                                    let lastUserMessage: Message | undefined;
+                                    for (let i = conv.messages.length - 1; i >= 0; i--) {
+                                        if (conv.messages[i].role === 'user') {
+                                            lastUserMessage = conv.messages[i];
+                                            break;
+                                        }
+                                    }
+                                    const preview = lastUserMessage?.content || lastMessage?.content || 'No messages';
+                                    const previewText = typeof preview === 'string' ? preview : JSON.stringify(preview);
+                                    const truncatedPreview = previewText.length > 60 
+                                        ? previewText.substring(0, 60) + '...' 
+                                        : previewText;
+                                    
+                                    const date = new Date(conv.lastUpdated);
+                                    const isToday = date.toDateString() === new Date().toDateString();
+                                    const isYesterday = date.toDateString() === new Date(Date.now() - 86400000).toDateString();
+                                    
+                                    let timeDisplay: string;
+                                    if (isToday) {
+                                        timeDisplay = `Today, ${date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+                                    } else if (isYesterday) {
+                                        timeDisplay = `Yesterday, ${date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+                                    } else {
+                                        timeDisplay = date.toLocaleDateString([], { 
+                                            month: 'short', 
+                                            day: 'numeric',
+                                            hour: '2-digit', 
+                                            minute: '2-digit' 
+                                        });
+                                    }
+                                    
+                                    const isActive = selectedAgent === conv.agentRole;
+                                    
+                                    return (
+                                        <div
+                                            key={`${conv.agentRole}-${index}`}
+                                            onClick={() => {
+                                                setSelectedAgent(conv.agentRole);
+                                                setChatHistories(prev => ({
+                                                    ...prev,
+                                                    [conv.agentRole]: conv.messages
+                                                }));
+                                                setShowHistory(false);
+                                            }}
+                                            className={`p-3 rounded-lg cursor-pointer transition-all ${
+                                                isActive 
+                                                    ? 'bg-cyan-900 border border-cyan-600' 
+                                                    : 'bg-gray-700 hover:bg-gray-600'
+                                            }`}
+                                        >
+                                            <div className="flex items-start justify-between mb-2">
+                                                <div className="flex items-center gap-2">
+                                                    <span className={`text-xs font-semibold px-2 py-0.5 rounded ${
+                                                        isActive 
+                                                            ? 'bg-cyan-700 text-cyan-100' 
+                                                            : 'bg-gray-600 text-cyan-400'
+                                                    }`}>
+                                                        {conv.agentName}
+                                                    </span>
+                                                    {isActive && (
+                                                        <span className="text-xs text-cyan-300">Active</span>
+                                                    )}
+                                                </div>
+                                            </div>
+                                            
+                                            <p className="text-sm text-gray-300 line-clamp-2 mb-2">
+                                                {truncatedPreview}
+                                            </p>
+                                            
+                                            <div className="flex items-center justify-between text-xs">
+                                                <span className="text-gray-400">
+                                                    {conv.messageCount} message{conv.messageCount !== 1 ? 's' : ''}
+                                                </span>
+                                                <span className="text-gray-500">
+                                                    {timeDisplay}
+                                                </span>
+                                            </div>
                                         </div>
-                                        <p className="text-sm text-white line-clamp-2">{entry.query}</p>
-                                    </div>
-                                ))
+                                    );
+                                })
                             )}
                         </div>
+                        
+                        {allConversations.length > 0 && (
+                            <div className="p-4 border-t border-gray-700 flex-shrink-0">
+                                <button
+                                    onClick={() => {
+                                        if (user && window.conversationStorage) {
+                                            window.conversationStorage.clearUserData(user.email);
+                                            setChatHistories({});
+                                            setAllConversations([]);
+                                            // Reset to welcome messages
+                                            const initialHistories: Partial<Record<AgentRole, Message[]>> = {};
+                                            (Object.keys(AGENT_ROLES) as AgentRole[]).forEach(key => {
+                                                initialHistories[key] = [{
+                                                    role: 'assistant',
+                                                    content: AGENT_ROLES[key].getWelcomeMessage(user.name || 'there'),
+                                                    agentId: key,
+                                                }];
+                                            });
+                                            setChatHistories(initialHistories);
+                                        }
+                                    }}
+                                    className="w-full py-2 px-3 text-sm text-red-400 hover:text-red-300 hover:bg-red-900/20 rounded-lg transition-colors border border-red-800/50"
+                                    title="Clear all chat history"
+                                >
+                                    🗑️ Clear All History
+                                </button>
+                            </div>
+                        )}
                     </aside>
                 )}
 
