@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect, useCallback, memo } from 'react';
 import { createRoot } from 'react-dom/client';
 import { GoogleGenAI } from "@google/genai";
 import { auth, type GoogleUser } from './auth-oauth2';
+import DCFCalculator from './components/DCFCalculator';
 
 import type { Message, Agent, AgentRole, RagSources, UploadedFileState } from './types';
 import { AGENT_ROLES, UserAvatar, AssistantAvatar } from './constants';
@@ -159,7 +160,17 @@ const LoginScreen: React.FC = memo(() => {
     );
 });
 
-const Header: React.FC<{ user: GoogleUser; onSignOut: () => void; tokenCount: number; totalTokenLimit: number; onToggleHistory: () => void; showHistory: boolean; conversationCount?: number }> = memo(({ user, onSignOut, tokenCount, totalTokenLimit, onToggleHistory, showHistory, conversationCount = 0 }) => (
+const Header: React.FC<{
+    user: GoogleUser;
+    onSignOut: () => void;
+    tokenCount: number;
+    totalTokenLimit: number;
+    onToggleHistory: () => void;
+    showHistory: boolean;
+    conversationCount?: number;
+    activeView: 'chat' | 'dcf';
+    onSelectView: (view: 'chat' | 'dcf') => void;
+}> = memo(({ user, onSignOut, tokenCount, totalTokenLimit, onToggleHistory, showHistory, conversationCount = 0, activeView, onSelectView }) => (
      <header className="bg-gray-800 border-b border-gray-700 p-4 flex justify-between items-center shadow-md flex-shrink-0">
         <div className="flex items-center gap-4">
             <AppLogo className="h-10 w-auto" />
@@ -172,6 +183,30 @@ const Header: React.FC<{ user: GoogleUser; onSignOut: () => void; tokenCount: nu
              <div className="text-sm text-right">
                 <span className="font-medium text-white truncate">{user.name || user.email}</span>
                 <p className="text-gray-400">Tokens: {tokenCount.toLocaleString()} / {totalTokenLimit.toLocaleString()}</p>
+            </div>
+            <div className="flex items-center gap-2">
+                <button
+                    onClick={() => onSelectView('chat')}
+                    className={`py-2 px-3 border rounded-lg shadow-sm text-sm font-medium transition-all focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-800 focus:ring-cyan-500 ${
+                        activeView === 'chat'
+                            ? 'border-cyan-500 bg-cyan-900 text-cyan-100'
+                            : 'border-gray-600 bg-gray-700 text-white hover:bg-gray-600'
+                    }`}
+                    title="Chat"
+                >
+                    Chat
+                </button>
+                <button
+                    onClick={() => onSelectView('dcf')}
+                    className={`py-2 px-3 border rounded-lg shadow-sm text-sm font-medium transition-all focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-800 focus:ring-cyan-500 ${
+                        activeView === 'dcf'
+                            ? 'border-cyan-500 bg-cyan-900 text-cyan-100'
+                            : 'border-gray-600 bg-gray-700 text-white hover:bg-gray-600'
+                    }`}
+                    title="DCF Calculator"
+                >
+                    DCF
+                </button>
             </div>
             <button
                 onClick={onToggleHistory}
@@ -260,6 +295,7 @@ const LoadingBubble: React.FC<{ agent: Agent }> = memo(({ agent }) => (
 const App: React.FC = () => {
     const [user, setUser] = useState<GoogleUser | null>(null);
     const [isAuthLoading, setIsAuthLoading] = useState(true);
+    const [activeView, setActiveView] = useState<'chat' | 'dcf'>('chat');
     const [selectedAgent, setSelectedAgent] = useState<AgentRole>('METHODS_SPECIALIST');
     const [ragSources, setRagSources] = useState<RagSources>({
         standards: true,
@@ -754,14 +790,26 @@ const App: React.FC = () => {
                 onToggleHistory={() => setShowHistory(!showHistory)} 
                 showHistory={showHistory}
                 conversationCount={allConversations.length}
+                activeView={activeView}
+                onSelectView={(view) => {
+                    setActiveView(view);
+                    // Close the history panel when switching contexts
+                    setShowHistory(false);
+                }}
             />
             
-            {/* Agent Tabs */}
-            <div className="bg-gray-800 border-b border-gray-700">
-                <div className="px-6 py-2">
-                    <AgentTabs selectedAgent={selectedAgent} onSelectAgent={setSelectedAgent} />
+            {activeView === 'dcf' ? (
+                <main className="flex-1 overflow-y-auto bg-gray-900">
+                    <DCFCalculator />
+                </main>
+            ) : (
+            <>
+                {/* Agent Tabs */}
+                <div className="bg-gray-800 border-b border-gray-700">
+                    <div className="px-6 py-2">
+                        <AgentTabs selectedAgent={selectedAgent} onSelectAgent={setSelectedAgent} />
+                    </div>
                 </div>
-            </div>
 
             <div className="flex flex-1 overflow-hidden">
                 {/* Chat History Sidebar */}
@@ -1076,6 +1124,8 @@ const App: React.FC = () => {
                         </div>
                     </div>
                 </div>
+            )}
+            </>
             )}
         </div>
     );

@@ -30,6 +30,7 @@ from app.api.chat_integration_endpoints import router as chat_router
 from app.api.enhanced_chat_endpoints import router as enhanced_chat_router
 from app.api.document_analysis_endpoints import router as document_analysis_router
 from app.api.agent_evaluation_endpoints import router as evaluation_router
+from app.api.dcf_endpoints import router as dcf_router
 
 # Global services
 rag_service = None
@@ -118,6 +119,7 @@ app.include_router(chat_router)
 app.include_router(enhanced_chat_router)
 app.include_router(document_analysis_router)
 app.include_router(evaluation_router)
+app.include_router(dcf_router)
 
 @app.get("/")
 async def root():

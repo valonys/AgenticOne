@@ -10,6 +10,14 @@ export default defineConfig(({ mode }) => {
         port: 3000,
         host: '0.0.0.0',
         strictPort: true,
+        proxy: {
+          // Local dev: route API calls to FastAPI
+          '/api': {
+            target: 'http://localhost:8000',
+            changeOrigin: true,
+            secure: false,
+          },
+        },
       },
       plugins: [react()],
       define: {
